@@ -1,0 +1,1062 @@
+================================================================================
+OSS DASHBOARD PLATFORM - AI AGENT BUILD PROMPTS
+================================================================================
+
+HOW TO USE THIS FILE
+--------------------
+1. This file contains a sequence of prompts, one per task. Copy ONE prompt at
+   a time into your coding agent, in order, and let it finish before moving
+   to the next prompt.
+2. Make sure the agent has read access to
+   "OSS_Dashboard_Product_Development_Guide.md" (place it in the repo root or
+   attach it to the agent's context) BEFORE you paste Prompt 0. Every later
+   prompt references this guide by section number instead of repeating it.
+3. This environment has no Java runtime, no Node runtime, no Docker, no
+   Kubernetes and no database engine available. Every prompt therefore asks
+   the agent to WRITE CODE, CONFIGURATION AND TESTS ONLY. The agent must
+   never attempt to compile, run, build, containerize or execute anything.
+4. Every prompt ends with a "Validate" instruction. This only means the
+   agent must review its own output against the referenced requirements and
+   state clearly whether each requirement is fulfilled or not fulfilled
+   (Yes/No + short reason). It does NOT mean running any command.
+5. After all prompts are complete, copy the finished codebase out of this
+   environment and build/run/test it on a normal machine with Java, Node,
+   Docker etc.
+
+================================================================================
+PHASE 0 - REPOSITORY FOUNDATION
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 0.1 - Repository skeleton
+--------------------------------------------------------------------------------
+Using OSS_Dashboard_Product_Development_Guide.md sections 13 and 14 as the
+exact structure reference, create the full repository skeleton for two
+top-level folders: "oss-dashboard-backend" and "oss-dashboard-frontend".
+
+Requirements:
+- Recreate every folder and sub-folder shown in section 13 (backend) and
+  section 14 (frontend), including empty placeholder README.md files inside
+  each leaf folder describing its intended purpose in one paragraph.
+- Create a root-level top pom.xml (backend, modular monolith, multi-module
+  Maven layout) listing all modules under tmf/ and oss-app/ as <module>
+  entries, without version numbers that require a network build.
+  Do not run any Maven command.
+- Create a root-level package.json for the frontend workspace listing the
+  folders under oss-dashboard-frontend/ as npm workspaces. Do not run any
+  npm command.
+- Create a top-level README.md summarizing the product purpose from section 1.
+- Do not generate any business logic yet. This prompt is structure-only.
+
+Validate: List every folder from sections 13 and 14 and mark Yes/No whether
+it now exists in the repository.
+
+--------------------------------------------------------------------------------
+PROMPT 0.2 - Core architectural principles as engineering guardrails
+--------------------------------------------------------------------------------
+Read OSS_Dashboard_Product_Development_Guide.md section 2 (Core Architectural
+Principles). Create a CONTRIBUTING.md at the repository root that restates
+all 12 principles as enforceable engineering rules for anyone (human or AI
+agent) writing code in this repository, and add a short "Definition of Done"
+checklist derived from section 23 (Validation Checklist).
+
+Validate: Confirm all 12 principles from section 2 and all items from
+section 23 are represented in CONTRIBUTING.md. State Yes/No per principle.
+
+================================================================================
+PHASE 1 - TMF CORE SHARED TRANSPORT (tmf-core)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 1.1 - tmf-core HTTP transport module
+--------------------------------------------------------------------------------
+Reference: section 7.4 (Connector design) and section 13 backend structure
+(tmf/tmf-core/http/).
+
+Implement the tmf-core Maven module with the following Java classes inside
+tmf/tmf-core/http/:
+- TmfHttpExecutor: shared HTTP client wrapper used by every TMF module
+  gateway. Must support configurable timeouts, base URL resolution per
+  connection, and pluggable interceptors.
+- AuthenticationInterceptor: resolves and applies the correct auth scheme
+  (API key, OAuth2 client credentials, basic auth) per connection, reading
+  credentials only from a CredentialResolver interface (do not implement
+  storage yet, just the interface and interceptor contract).
+- CorrelationInterceptor: propagates a correlation ID header on every
+  outbound request, generating one if absent.
+- PaginationExtractor: interface + default implementation to extract next
+  page cursors/links per TMF pagination conventions.
+- ErrorDecoder: translates TMF error payloads into a typed TmfApiException
+  hierarchy (NotFound, Validation, Unauthorized, Forbidden, RateLimited,
+  ServerError).
+- RequestContext: carries correlation ID, connection ID, requesting user
+  authorities, and environment classification through the call.
+
+Also create tmf/tmf-core/error/, tmf/tmf-core/pagination/,
+tmf/tmf-core/filtering/, tmf/tmf-core/validation/, tmf/tmf-core/logging/,
+tmf/tmf-core/correlation/, tmf/tmf-core/security/ and
+tmf/tmf-core/resilience/ with the supporting classes each package name
+implies (filtering DSL for TMF query params, validation base classes,
+structured logging helpers, correlation ID utilities, security context
+helpers, and resilience primitives: timeout, circuit breaker, bulkhead,
+retry-safety guard for write operations per section 17.4).
+
+Write unit tests (JUnit 5) for every class above, covering both success and
+failure paths. Do not run the tests.
+
+Validate: Go through the bullet list above and confirm Yes/No each class and
+its test class exists and compiles logically (no missing imports/symbols).
+
+--------------------------------------------------------------------------------
+PROMPT 1.2 - OpenAPI generation pipeline (build-time, not runtime)
+--------------------------------------------------------------------------------
+Reference: sections 6 and 3.2.
+
+Set up the OpenAPI generation pipeline configuration (Maven
+openapi-generator-maven-plugin configuration, not executed) for a sample
+placeholder spec, demonstrating the pattern that every later TMF module will
+reuse:
+- A folder convention: tmf/<module>/spec/ for the pinned official TMF OpenAPI
+  file, with a spec-provenance.md documenting source URL, version, and
+  retrieval date fields to be filled in per module.
+- A shared parent POM profile/plugin block that generates interfaces and
+  models into target/generated-sources, kept separate from handwritten
+  source, per section 6.
+- A CODEGEN.md doc at tmf/ root explaining the six-step process from section
+  6 ("previously unsupported TMF API or version requires...") so future
+  contributors follow the same build-time process instead of inventing a
+  runtime interpreter.
+
+Validate: Confirm the generation pattern is build-time only (Yes/No), that
+generated and handwritten source are physically separated (Yes/No), and that
+CODEGEN.md enumerates all 6 steps from section 6 (Yes/No).
+
+================================================================================
+PHASE 2 - CONNECTION REGISTRY, METADATA ENGINE, PERSISTENCE
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 2.1 - Connection Registry and certification domain model
+--------------------------------------------------------------------------------
+Reference: section 7 (7.1 to 7.3) and section 12.
+
+In tmf/connection-registry/ implement:
+- Connection entity/DTO with every field listed in 7.1.
+- ConnectionState enum exactly matching 7.2 (DRAFT, VALIDATING, ACTIVE,
+  DEGRADED, DISABLED, REJECTED) and the allowed state transitions as a
+  documented state machine class.
+- CapabilityProfile entity with every field listed in 7.3.
+- A CertificationService interface describing the certification workflow
+  (validate TMF version, resources, operations, filters, pagination, auth,
+  extensions, errors, event capabilities) referenced in section 1.1, with a
+  mock/no-op implementation suitable for local development.
+- Repository interfaces (Spring Data style) for Connection and
+  CapabilityProfile, without a live database connection.
+- Unit tests for the state machine (valid and invalid transitions) and for
+  CertificationService's validation rule composition.
+
+Validate: Confirm every field from 7.1 and 7.3 is present (Yes/No each), and
+that illegal state transitions are rejected by the state machine tests
+(Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 2.2 - Metadata engine proof of concept
+--------------------------------------------------------------------------------
+Reference: section 9.1 and section 20.
+
+In tmf/metadata-engine/ implement the metadata lifecycle model from 9.1:
+- MetadataSchema versioned model capturing entity/metadata schema versions,
+  compatible TMF contract versions, fields/types/required flags/enums,
+  labels/layout/search/sort/visibility, references/relationships/
+  characteristics, required permissions per operation/field, sensitive-field
+  masking flags, localization resource keys, and override
+  precedence/provenance.
+- A MetadataResolver that merges generated baseline metadata, product
+  override metadata, and environment display settings into a "Validated
+  metadata snapshot" object, applying explicit override precedence.
+- A MetadataValidationPolicy component that fails closed on unknown fields
+  or incompatible versions (per section 9.1 "fail according to an explicit
+  validation policy" and section 2 principle 10 "Fail closed").
+- Versioning and audit fields on the resulting snapshot so activated
+  snapshots are traceable, per 9.1.
+- Unit tests covering: successful merge/precedence, unknown-field rejection,
+  incompatible-version rejection, and snapshot versioning.
+
+Validate: Confirm the merge order matches 9.1 exactly (generated -> product
+override -> environment display -> validated snapshot) (Yes/No), and that
+unknown fields / incompatible versions are rejected rather than silently
+ignored (Yes/No, ties to Fail Closed principle).
+
+--------------------------------------------------------------------------------
+PROMPT 2.3 - Platform persistence layer
+--------------------------------------------------------------------------------
+Reference: section 12 and section 10.3.
+
+Implement the platform database schema (as JPA entities + Flyway/Liquibase
+migration SQL files, not executed) covering only platform-owned state per
+section 12: user preferences, saved searches, dashboard customizations,
+audit events, connection registry records, capability profiles, workflow
+approval requests, and any other platform-owned tables implied elsewhere in
+the guide (metadata snapshots, module registry). Do not create tables for
+service, resource, order, alarm, customer, account or quote master data —
+those remain in external systems per section 1 and principle 3 in section 2.
+
+Also write a database.yaml matching the structure in section 10.3, with
+placeholders for secrets resolved via environment variables only (never
+plaintext), per section 11.
+
+Validate: List every table created and confirm Yes/No it is platform-owned
+data only (not operational domain master data), per section 1 and section 2
+principle 3.
+
+================================================================================
+PHASE 3 - SECURITY / BFF (Spring Boot OIDC, Session, CSRF, Authorization)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 3.1 - OIDC Authorization Code Flow (BFF)
+--------------------------------------------------------------------------------
+Reference: sections 4.2, 4.3, 4.5, 4.6, 4.12.
+
+In oss-app/src/main/java/.../ossapp/security/oidc/ and .../login/ implement
+Spring Boot OAuth2/OIDC client configuration exactly matching the client
+baseline YAML in 4.5 (confidential client, standard-flow enabled,
+direct-access-grants disabled, implicit-flow disabled, service-accounts
+disabled, full-scope-allowed false) and the request flow in 4.3 (redirect
+preserving original URL, callback validating state/nonce/issuer/signature/
+audience/expiry, token exchange, tokens remain server-side, session ID
+rotation).
+
+Also implement the behaviors in 4.6:
+- Protected page without session -> redirect to Keycloak.
+- Successful login -> redirect to originally requested page.
+- Unauthenticated API request -> 401.
+- Authenticated but unauthorized API request -> 403.
+- No login redirect loop on authorization failure.
+- Keycloak unavailable during login -> controlled error page with a
+  correlation ID (reuse CorrelationInterceptor pattern from Phase 1).
+
+Implement the environment gate from 4.12: authentication/authorization can
+only be disabled outside UAT/Production; the application must refuse to
+start in UAT or Production if either is disabled (fail closed). Implement
+the synthetic principal for local/dev only, with a visible development
+banner, and guard it so it cannot load in a non-development profile.
+
+Write tests covering every behavior in section 17.2 (Authentication and
+session tests) that is applicable to this prompt's scope. Do not run tests.
+
+Validate: Go through every bullet in 4.6 and section 17.2 and state Yes/No
+whether it is implemented and covered by a test.
+
+--------------------------------------------------------------------------------
+PROMPT 3.2 - Server-side session management
+--------------------------------------------------------------------------------
+Reference: section 4.7.
+
+Implement session configuration and code matching 4.7 exactly: cookie name
+OSS_DASHBOARD_SESSION, HttpOnly, Secure, SameSite=Lax, host-restricted scope,
+session ID rotation after login, session fixation protection, configured
+idle and absolute timeouts (use the values from 10.2: idle-timeout 30m,
+absolute-timeout 8h), local server-side invalidation during logout, and a
+pluggable shared session storage interface (for horizontal scaling) with a
+default in-memory implementation clearly marked "not for multi-instance
+production" plus a documented extension point for a shared store (e.g.
+Redis) without wiring a live Redis instance.
+
+Add an automated check (unit test or static assertion test) proving no
+OAuth/OIDC token ever appears in a URL, response body, log statement, or
+audit event produced by this module.
+
+Validate: Confirm each configuration value from 4.7 and 10.2 matches exactly
+(Yes/No per value), and confirm the no-token-leakage test exists (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 3.3 - CSRF protection
+--------------------------------------------------------------------------------
+Reference: section 4.8.
+
+Implement CSRF protection in oss-app/.../security/csrf/ for POST, PUT,
+PATCH, DELETE on cookie-authenticated endpoints, matching 4.8. Provide an
+endpoint the React app can call to obtain the CSRF token, and document the
+exact request header name the frontend must echo it back on. Ensure CSRF
+protection cannot be globally disabled by a single config flag without an
+explicit, logged, security-reviewed override path (add a comment block
+explaining the review requirement). Write tests proving state-changing
+requests without a valid CSRF token are rejected, and that GET requests are
+unaffected.
+
+Validate: Confirm CSRF is enforced on all four listed HTTP methods (Yes/No
+each) and that no default configuration disables it globally (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 3.4 - Roles, groups and backend authorization enforcement
+--------------------------------------------------------------------------------
+Reference: sections 4.10, 4.11.
+
+Implement the full role list from 4.10 as Spring Security authorities, the
+three groups (OssUser, OssAdvancedUser, OssAdministrator) with the
+recommended baseline mapping described in 4.10, and a claims-to-authorities
+mapper in oss-app/.../security/claims/ and .../authorization/ per 4.11 (BFF
+maps approved Keycloak client-role claims to Spring Security authorities).
+
+Add a reusable @RequiresAuthority-style annotation or equivalent method-
+security expression, and apply it as a pattern example to at least one
+placeholder controller endpoint per domain (service, resource, order,
+alarm, catalog, customer, account, quote, event, analytics, admin,
+workflow), so every future module has a working example to copy. Note in
+code comments that frontend permission checks (to be built later) control
+navigation/presentation only and are not a security boundary, per principle
+7 in section 2.
+
+Write tests proving: a user without the required authority gets 403; a user
+with the authority succeeds; group-to-role mapping does not imply that every
+group member automatically gets every domain role (per 4.10's last
+paragraph).
+
+Validate: Confirm all 20 roles/permissions from 4.10 are defined (Yes/No),
+all three groups exist with correct baseline mapping (Yes/No), and
+workflow:approve is assignable independently of the groups (Yes/No, ties to
+section 23 checklist item).
+
+--------------------------------------------------------------------------------
+PROMPT 3.5 - Logout behavior
+--------------------------------------------------------------------------------
+Reference: section 4.9.
+
+Implement both local logout (invalidate only the OSS Dashboard session) and
+global SSO logout (invalidate local session + request logout at Keycloak) as
+configurable via the logout.mode setting shown in 10.2. Make the enterprise
+IAM owner's chosen default explicit and overridable only through
+configuration, not code changes. Write tests for both logout modes.
+
+Validate: Confirm both logout modes are implemented and independently
+testable (Yes/No each), and that the active mode is driven by configuration
+only (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 3.6 - Audit and correlation foundation
+--------------------------------------------------------------------------------
+Reference: section 2 principle 11, section 12, section 17.5 (audit-related
+items), and section 20.
+
+Implement an AuditService in oss-app/.../audit/ that records structured
+audit events (actor, action, target, correlation ID, timestamp, outcome,
+approval linkage where applicable) into the audit_events table created in
+Prompt 2.3. Ensure secret redaction is applied automatically to any payload
+before logging (reuse/extend the redaction concept from section 11). Wire
+correlation ID propagation from CorrelationInterceptor (Phase 1) through to
+every audit event and structured log line.
+
+Write tests proving: secrets never appear in an audit record; every audit
+event carries a correlation ID; audit events for approval + execution are
+recorded as separate events per section 8.3's rule "Approval and execution
+are separate audit events."
+
+Validate: Confirm secret redaction, correlation ID propagation, and
+approval/execution audit separation are all implemented and tested (Yes/No
+each), per section 17.5 and section 20.
+
+================================================================================
+PHASE 4 - TMF MODULES (CURRENT ROADMAP SCOPE)
+================================================================================
+For every module below, follow the exact same internal structure as defined
+in section 7.4 (generated/api, generated/model, gateway/), reuse tmf-core
+from Phase 1, and implement only the operations relevant to the roles and
+use cases referenced. Each module must include: pinned OpenAPI spec
+placeholder + provenance doc (per Prompt 1.2 pattern), generated interfaces/
+models folder (hand-authored placeholder representing what codegen would
+produce, clearly commented as "generated - do not hand edit" so it is not
+confused with real generator output), a typed gateway class, module-specific
+validation, a metadata fragment consumed by the metadata engine (Phase 2),
+and unit/integration/contract/capability tests per section 17.1 and 17.3.
+
+--------------------------------------------------------------------------------
+PROMPT 4.1 - TMF638 Service Inventory module
+--------------------------------------------------------------------------------
+Reference: sections 5, 7.4, 15.1 (UC-01, UC-02, UC-04), 15.5 (UC-18).
+
+Implement tmf638-service-inventory covering: service search (UC-01) with
+filters by service ID, name, interaction reference, and supported customer
+reference; service details retrieval (UC-02 core panel only — related data
+comes from orchestration in Phase 5); service change operations (UC-18:
+create, change, deactivate, delete) gated by capability profile support,
+environment policy, and workflow approval hooks (approval enforcement itself
+is implemented in Phase 5 — just add the extension point here). Enforce
+service:read / service:write / service:delete authorities using the pattern
+from Prompt 3.4.
+
+Validate: Confirm UC-01, UC-02 (core only), and UC-18 are functionally
+represented in code (Yes/No each) and gated by the correct roles (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.2 - TMF639 Resource Inventory module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.1 (UC-03, UC-04), 15.5 (UC-19).
+
+Implement tmf639-resource-inventory covering: resource search (UC-03) across
+logical, physical, telephone and IP resource types; resource details (UC-04)
+including specification, characteristics, interfaces, addresses,
+relationships; resource change operations (UC-19) with the same
+capability/approval extension points as Prompt 4.1. Enforce resource:read /
+resource:write / resource:delete.
+
+Validate: Confirm UC-03, UC-04, and UC-19 are represented (Yes/No each) and
+correctly role-gated (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.3 - TMF641 Service Ordering module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.2 (UC-05 partial, UC-07).
+
+Implement tmf641-service-ordering covering order search scoped to service
+orders (part of UC-05) and order details (UC-07: tasks, milestones, state,
+links, fulfillment information). Enforce order:read (order:write is not in
+current roadmap scope for this module unless explicitly required by a later
+prompt — leave a clearly marked extension point).
+
+Validate: Confirm service-order search and UC-07 fields are present
+(Yes/No), and role gating is correct (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.4 - TMF622 Product Ordering module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.2 (UC-05 partial, UC-06 partial).
+
+Implement tmf622-product-ordering covering order search scoped to product
+orders (remaining part of UC-05). Include the data fields needed to support
+Order Journey Trace (UC-06) in Phase 5 (product order to service order
+linkage identifiers). Enforce order:read.
+
+Validate: Confirm product-order search exists (Yes/No) and exposes the
+linkage fields Order Journey will need in Phase 5 (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.5 - TMF642 Alarm Management module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.3 (UC-08, UC-10 data source).
+
+Implement tmf642-alarm-management covering alarm search (UC-08) by alarm ID,
+severity, resource, or service, and the raw data access needed by the Alarm
+Dashboard (UC-10) and Alarm Correlation (UC-11) orchestration built in Phase
+5. Enforce alarm:read / alarm:write as applicable.
+
+Validate: Confirm UC-08 search filters are complete (Yes/No) and the module
+exposes what UC-10/UC-11 orchestration will need (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.6 - TMF620 Product Catalog module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.4 (UC-12, UC-13 partial).
+
+Implement tmf620-product-catalog covering catalog/offering/specification
+browsing (UC-12) and the service-specification lookup fields needed for
+UC-13. Enforce catalog:read. Ensure the module never represents catalog data
+as inventory data, per section 5's Product Catalog/Order/Inventory
+distinction.
+
+Validate: Confirm UC-12 is fully represented (Yes/No) and no
+catalog-as-inventory conflation exists anywhere in naming or comments
+(Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.7 - TMF632 Party/Customer module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.4 (UC-14).
+
+Implement tmf632-party-customer covering customer/party search (UC-14).
+Enforce customer:read.
+
+Validate: Confirm UC-14 search fields and role gating are complete (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.8 - TMF666 Account Management module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.4 (UC-15).
+
+Implement tmf666-account-management covering account details (UC-15):
+billing, service and customer accounts. Enforce account:read.
+
+Validate: Confirm UC-15's three account types (billing, service, customer)
+are all represented (Yes/No) and role gating is correct (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.9 - TMF648 Quote Management module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.4 (UC-16, UC-17).
+
+Implement tmf648-quote-management covering quote search (UC-16) by quote ID,
+customer, status, and full quote lifecycle/CRUD (UC-17: create, change,
+manage supported transitions). Enforce quote:read / quote:write.
+
+Validate: Confirm UC-16 and UC-17 are both fully represented (Yes/No each)
+and correctly role-gated (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.10 - TMF688 Event Management module
+--------------------------------------------------------------------------------
+Reference: sections 5, 15.6 (UC-25).
+
+Implement tmf688-event-management covering the event subscription/streaming
+contract needed for real-time event monitoring (UC-25: live service, order,
+alarm and inventory events). This module only defines the typed
+subscription/notification contract; the browser-facing real-time bridge is
+built in Phase 6 (oss-app/.../realtime/). Enforce event:read.
+
+Validate: Confirm the notification contract covers service, order, alarm and
+inventory event types (Yes/No each) and is consumable by a later real-time
+bridge without redesign (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 4.11 - modules.yaml and module enable/disable
+--------------------------------------------------------------------------------
+Reference: section 10.4 and section 10.1.
+
+Create config/modules.yaml matching the example in 10.4, extended to include
+every module built in Prompts 4.1-4.10 (tmf638 through tmf688), each with an
+enabled flag. Implement the module-activation-reading code so that a module
+whose config flag is false is not registered with the connection registry
+or exposed via the API, without requiring a rebuild (restart-only, per the
+terminology in 10.1). Document clearly in code comments that enabling a
+brand-new TMF API not already built requires the full 6-step process from
+section 6, not a config change.
+
+Validate: Confirm every module from Prompts 4.1-4.10 has a config/modules.yaml
+entry (Yes/No), and that disabling a module actually removes it from runtime
+routing without a rebuild (Yes/No).
+
+================================================================================
+PHASE 5 - ORCHESTRATION (CROSS-API CAPABILITIES)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 5.1 - Orchestration core
+--------------------------------------------------------------------------------
+Reference: section 8 (intro) and 7.5, 7.6.
+
+Implement orchestration/orchestration-core/ with the sub-packages listed in
+section 8: aggregation/, partialfailure/, source/, concurrency/, timeout/,
+authorization/, correlation/. This core must standardize: concurrency
+limits, time budgets, partial failure handling, source attribution,
+aggregation/deduplication, authorization enforcement across fanned-out
+calls, cancellation propagation when the caller disconnects, and
+correlation ID propagation (reuse Phase 1). Also implement the
+multi-connection execution model from 7.5 (selected-connection vs ALL
+fan-out with concurrency limits, authorization, cancellation, source
+attribution, per-connection timeouts) as the foundation every orchestration
+module below will call.
+
+Write unit tests proving: partial failures produce partial results rather
+than total failure; unauthorized connections never leak results (per 7.6
+"No leakage of results from unauthorized connections"); cancellation stops
+in-flight fan-out calls.
+
+Validate: Confirm every sub-package from section 8 exists with working logic
+(Yes/No each) and the three test guarantees above are demonstrated (Yes/No
+each).
+
+--------------------------------------------------------------------------------
+PROMPT 5.2 - Global Search
+--------------------------------------------------------------------------------
+Reference: sections 7.6, 15.6 (UC-21).
+
+Implement orchestration/globalSearch/ producing exactly the response shape
+shown in the JSON example in 7.6 (items, partial, sources with connectionId/
+status/durationMs/itemCount, page with limit/nextCursor, correlationId).
+Implement opaque cursor pagination, stable platform-level sorting,
+domain-specific identity/deduplication rules, per-source status/elapsed
+time, maximum participating connections and merged records limits. Enforce
+applicable domain read roles per UC-21.
+
+Validate: Diff the implemented response shape against the exact JSON example
+in section 7.6, field by field (Yes/No per field), and confirm pagination
+and deduplication behavior is tested (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 5.3 - Service 360 (Core and Complete)
+--------------------------------------------------------------------------------
+Reference: sections 8.1, 8.2, 15.6 (UC-22), 16 (roadmap scope).
+
+Implement orchestration/service360/ delivering:
+- Service 360 Core: core service details (from tmf638) plus independently
+  loaded related resources (tmf639), related service orders (tmf641), and
+  active alarms (tmf642), matching the composition pattern in 8.1 exactly
+  (core panel loads first; relationship panels load independently; a common
+  correlation ID is preserved; partial failures are shown without hiding
+  successful data).
+- Service 360 Complete: adds customer, account, product-order and broader
+  cross-domain context per 16, using the data model hierarchy in 8.2
+  (Customer -> Account -> Product Order context -> Service Order -> Service
+  -> Resource -> Alarm).
+- Ensure product-order context is explicitly labeled as product-order
+  context and never represented as customer-owned Product Inventory, per
+  8.2's explicit warning and section 5's Catalog/Order/Inventory
+  distinction, and per Architecture Decision #7 in section 21.
+
+Validate: Confirm Service 360 Core matches 8.1's four data sources exactly
+(Yes/No each), Service 360 Complete matches 8.2's hierarchy (Yes/No), and
+product-order context is never mislabeled as inventory anywhere in code,
+comments, or API field names (Yes/No — this is Architecture Decision #7).
+
+--------------------------------------------------------------------------------
+PROMPT 5.4 - Customer 360
+--------------------------------------------------------------------------------
+Reference: sections 8.2, 15.6 (UC-23).
+
+Implement orchestration/customer360/ covering accounts, product-order
+context, services and alarms per UC-23, reusing the Service 360 data
+sources and the orchestration-core fan-out/partial-failure handling from
+Prompt 5.1.
+
+Validate: Confirm UC-23's four data categories (accounts, product-order
+context, services, alarms) are all present (Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 5.5 - Order Journey Trace
+--------------------------------------------------------------------------------
+Reference: sections 15.2 (UC-06).
+
+Implement orchestration/orderJourney/ tracing Product Order -> Service Order
+-> Service -> Resource using tmf622, tmf641, tmf638 and tmf639, enforcing
+order:read, service:read, resource:read together.
+
+Validate: Confirm the full four-hop trace (Product Order to Service Order to
+Service to Resource) works with partial-failure handling from Prompt 5.1
+(Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 5.6 - Alarm Correlation and Dashboard
+--------------------------------------------------------------------------------
+Reference: sections 15.3 (UC-09, UC-10, UC-11).
+
+Implement orchestration/alarmCorrelation/ covering: Service Impact View
+(UC-09: active alarms related to a service), Alarm Dashboard (UC-10: counts
+by severity, connection, service, resource), and Alarm Correlation (UC-11:
+alarm to service and resource relationships), reusing tmf642, tmf638, tmf639
+and the orchestration-core.
+
+Validate: Confirm UC-09, UC-10 and UC-11 are each independently implemented
+and tested (Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 5.7 - Relationship Explorer
+--------------------------------------------------------------------------------
+Reference: section 15.6 (UC-24).
+
+Implement the backend data-composition support for a graph view across
+order, service, resource and alarm relationships (UC-24), exposing a typed
+API the frontend Relationship Explorer screen (Phase 7) can consume. Reuse
+Order Journey (5.5) and Alarm Correlation (5.6) outputs where possible
+instead of duplicating logic.
+
+Validate: Confirm the graph API reuses existing orchestration modules rather
+than re-implementing their logic (Yes/No), and exposes nodes/edges for all
+four entity types (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 5.8 - Analytics
+--------------------------------------------------------------------------------
+Reference: section 15.7 (UC-31).
+
+Implement orchestration/analytics/ producing operational counts and
+connection metrics per UC-31, enforcing analytics:read.
+
+Validate: Confirm operational counts and connection metrics are both present
+(Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 5.9 - Workflow Approval
+--------------------------------------------------------------------------------
+Reference: sections 8.3, 15.7 (UC-30), 17.5, 20.
+
+Implement orchestration/workflowApproval/ implementing the full state
+machine from 8.3: Requester submits action -> immutable approval request ->
+authorized approver approves/rejects -> approved action executes against
+the certified connection -> approval and execution outcomes are audited
+(reuse AuditService from Prompt 3.6).
+
+Enforce every rule listed in 8.3:
+- Requesters cannot approve their own requests.
+- Approval expires after a configured period.
+- Approved payloads are immutable.
+- A payload change creates a new request.
+- Rejected or expired requests cannot execute.
+- Failure to verify approval blocks execution.
+- Approval and execution are separate audit events.
+
+Wire this into the write-operation extension points left in Prompts 4.1 and
+4.2 (TMF638/TMF639 change operations) so production writes cannot bypass
+approval. Enforce workflow:submit, workflow:view, workflow:approve as
+separately assignable authorities (UC-30), independent from admin roles per
+Architecture Decision #8 in section 21.
+
+Write tests covering every rule in section 17.5 that applies to workflow
+(self-approval rejection, expired/rejected execution rejection, edited
+payload requiring new approval, approved payload immutability, ETag/
+optimistic locking, idempotency for supported writes, audit linkage between
+request/approval/execution, no secrets in logs/traces/output).
+
+Validate: Go through every bullet in section 8.3 and section 17.5 workflow
+items and state Yes/No whether each is implemented and tested.
+
+================================================================================
+PHASE 6 - REAL-TIME BRIDGE, METADATA-DRIVEN API SURFACE
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 6.1 - Real-time event bridge
+--------------------------------------------------------------------------------
+Reference: architecture diagram in section 3 ("BFF APIs and real-time
+bridge"), section 15.6 (UC-25), Phase 4 Prompt 4.10 (tmf688).
+
+Implement oss-app/.../realtime/ as a server-sent-events or WebSocket bridge
+(choose one and document why in a short ADR comment) that consumes tmf688
+notifications and streams them to authenticated, authorized browser
+sessions only. Enforce event:read. Ensure the bridge never forwards a
+token to the browser and relies solely on the existing server-side session
+for authorization (per section 4 principles).
+
+Validate: Confirm the bridge is authenticated/authorized per session (not
+token-based) (Yes/No) and streams all four event categories from UC-25
+(service, order, alarm, inventory) (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 6.2 - Metadata-driven BFF API surface
+--------------------------------------------------------------------------------
+Reference: section 9.1, section 9.2 (backend side only — frontend is Phase
+7), section 15.7 (UC-26, UC-27, UC-29).
+
+Implement BFF REST endpoints in oss-app/.../gateway/ that:
+- Serve validated metadata snapshots (Phase 2.2) to the frontend generic
+  components.
+- Expose Application Registry endpoints for UC-26 (register, certify,
+  change, disable, review connections), enforcing admin:applications and
+  calling CertificationService from Prompt 2.1.
+- Expose API/Module Registry endpoints for UC-27 (configure installed
+  modules and their connections), enforcing admin:apis, reading/writing
+  modules.yaml activation state from Prompt 4.11.
+- Expose an Audit Dashboard read endpoint for UC-29, enforcing admin:audit,
+  reading from the audit_events table (Prompt 2.3/3.6).
+
+Explicitly document in code comments that UC-27 does not create support for
+a previously unsupported API at runtime, per its note in section 15.7.
+
+Validate: Confirm UC-26, UC-27 and UC-29 endpoints exist with correct role
+gates (Yes/No each), and that no endpoint allows runtime registration of an
+unsupported TMF API (Yes/No).
+
+================================================================================
+PHASE 7 - FRONTEND (React, token-free, BFF-backed)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 7.1 - Frontend auth and session shell
+--------------------------------------------------------------------------------
+Reference: sections 4.2, 4.3, 4.6, 14 (auth/ folder), 15.6.
+
+Implement oss-dashboard-frontend/auth/ with AuthenticatedUserProvider,
+SessionStatus, LoginRedirect, Logout, PermissionGuard and UnauthorizedView
+components. The app must contain NO username/password form, NO token
+storage of any kind (no localStorage/sessionStorage/cookies read by JS), and
+must rely entirely on the BFF session cookie plus a "who am I" BFF endpoint
+to know the current user and their authorities. PermissionGuard must clearly
+be documented as UX-only, not a security boundary (mirrors principle 7 in
+section 2 and the backend comment from Prompt 3.4).
+
+Validate: Confirm no token handling code exists anywhere in this folder
+(Yes/No — grep for token/secret keywords and report), and that
+PermissionGuard is explicitly documented as non-authoritative (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 7.2 - ui-engine generic components
+--------------------------------------------------------------------------------
+Reference: section 9.2.
+
+Implement oss-dashboard-frontend/ui-engine/ with GenericTable, GenericForm,
+GenericDetails, GenericSearch, GenericFilter, GenericField,
+GenericReference, GenericRelationship and GenericCharacteristic components,
+all driven entirely by the metadata snapshot format defined in Phase 2.2 /
+served by Phase 6.2 (field types, required flags, enums, labels, layout,
+search/sort/visibility, references/relationships/characteristics, per-field
+permissions, sensitive-field masking, localization keys). No component
+should hardcode a domain-specific field list; all domain specificity must
+come from metadata.
+
+Validate: Confirm each of the 9 generic components consumes metadata rather
+than hardcoded field lists (Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 7.3 - api-client and realtime frontend integration
+--------------------------------------------------------------------------------
+Reference: sections 4.8 (CSRF), 6.1, 14 (api-client/, realtime/, navigation/,
+shared/).
+
+Implement oss-dashboard-frontend/api-client/ as the single place that calls
+BFF REST endpoints, automatically attaching the CSRF header obtained from
+Phase 3.3's token endpoint on state-changing requests, and translating BFF
+401/403 responses into the correct UI behavior (401 -> trigger LoginRedirect
+flow; 403 -> show UnauthorizedView, no redirect loop). Implement
+oss-dashboard-frontend/realtime/ as the client side of Phase 6.1's bridge.
+Implement navigation/ and shared/ with minimal scaffolding needed by the
+screens built in the next prompts.
+
+Validate: Confirm CSRF header attachment is automatic for POST/PUT/PATCH/
+DELETE (Yes/No), and 401 vs 403 handling matches section 4.6 exactly
+(Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 7.4 - Inventory screens (UC-01 to UC-04)
+--------------------------------------------------------------------------------
+Reference: section 15.1, section 14 (screens/ServiceSearch,
+ServiceDetails, ResourceSearch, ResourceDetails).
+
+Implement ServiceSearch, ServiceDetails, ResourceSearch and ResourceDetails
+screens using the ui-engine generic components from Prompt 7.2 and the
+api-client from Prompt 7.3, matching the composite loading pattern from
+section 8.1 for ServiceDetails (core panel first, relationship panels load
+independently, partial failures shown without hiding successful data).
+
+Validate: Confirm UC-01 through UC-04 are each reachable and functionally
+complete against their guide descriptions (Yes/No each), and ServiceDetails
+follows the 8.1 composite-loading pattern (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 7.5 - Order and Alarm screens (UC-05 to UC-11)
+--------------------------------------------------------------------------------
+Reference: sections 15.2, 15.3, section 14 (OrderSearch, OrderDetails,
+AlarmSearch, extensions/AlarmDashboard).
+
+Implement OrderSearch, OrderDetails and AlarmSearch screens, plus the
+AlarmDashboard extension component (specialized, not metadata-generic, per
+section 9.2's note on specialized extensions) consuming UC-10's counts API
+from Prompt 5.6. Wire Service Impact View (UC-09) and Alarm Correlation
+(UC-11) views into ServiceDetails / ResourceDetails as relationship panels.
+
+Validate: Confirm UC-05 through UC-11 are each represented (Yes/No each),
+and AlarmDashboard is implemented as a specialized extension rather than a
+generic metadata screen (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 7.6 - Catalog, Customer, Account, Quote screens (UC-12 to UC-17)
+--------------------------------------------------------------------------------
+Reference: section 15.4, section 14 (CatalogBrowser, CustomerSearch,
+AccountManagement, QuoteManagement).
+
+Implement CatalogBrowser, CustomerSearch, AccountManagement and
+QuoteManagement screens covering UC-12 through UC-17, reusing generic
+components wherever the data is standard, and adding quote-lifecycle-
+specific controls (state transitions) as a thin extension on top of
+GenericForm/GenericDetails.
+
+Validate: Confirm UC-12 through UC-17 are each represented (Yes/No each),
+and quote lifecycle transitions (UC-17) are enforced against supported
+transitions only (Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 7.7 - 360 views, Global Search, Relationship Explorer, Events
+--------------------------------------------------------------------------------
+Reference: section 15.6, section 14 (Service360, Customer360, Analytics,
+EventsMonitor, extensions/ServiceTopology, extensions/ResourceVisualization).
+
+Implement Service360, Customer360 and EventsMonitor screens backed by
+Prompts 5.3/5.4/6.1, an Analytics screen backed by Prompt 5.8, and a global
+search entry point rendering the exact response shape from section 7.6
+(showing partial results and per-source status to the user, never hiding a
+failed source). Implement the ServiceTopology and ResourceVisualization
+specialized extensions as the graph rendering layer for UC-24
+(Relationship Explorer, backed by Prompt 5.7), and OrderWorkflow as the
+specialized extension for Order Journey (UC-06, backed by Prompt 5.5).
+
+Validate: Confirm UC-06, UC-20 through UC-25 are each represented (Yes/No
+each), and the Global Search UI surfaces partial/source-status information
+rather than hiding it (Yes/No — ties to section 7.6's "Partial success
+rather than silent omission").
+
+--------------------------------------------------------------------------------
+PROMPT 7.8 - Administration screens (UC-26 to UC-30)
+--------------------------------------------------------------------------------
+Reference: section 15.7, section 14 (Administration).
+
+Implement the Administration screen covering Application Registry (UC-26),
+API/Module Registry (UC-27), Audit Dashboard (UC-29) and Workflow Approval
+(UC-30) UIs, calling the Phase 6.2 and Phase 5.9 backend endpoints. Note
+UC-28 (Role and Group Management) is an enterprise Keycloak responsibility
+and must NOT be implemented as an in-app screen — add a clearly labeled
+"Managed in Keycloak" informational panel instead, linking out to the
+enterprise Keycloak admin console URL from configuration.
+
+Validate: Confirm UC-26, UC-27, UC-29 and UC-30 are implemented (Yes/No
+each), and confirm UC-28 is explicitly NOT implemented in-app and instead
+redirects to Keycloak (Yes/No — this is a deliberate scope boundary from
+section 15.7).
+
+================================================================================
+PHASE 8 - TESTING, DOCS, CONFIG, DEPLOYMENT ARTIFACTS (CODE ONLY, NOT RUN)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 8.1 - Remaining automated test coverage
+--------------------------------------------------------------------------------
+Reference: section 17 in full (17.1 through 17.5).
+
+Review every bullet in sections 17.1, 17.3, 17.4 and 17.5 against the
+codebase built so far. Write any missing unit, integration, contract,
+capability, resilience, or workflow/write-security tests needed to cover
+every remaining bullet not already covered by earlier prompts. Ensure tests
+for section 17.3 (connection compatibility: contract version/required
+resources, supported operations/filters/sorting, pagination/PATCH behavior,
+extensions/error responses, authentication/credential rotation, event/
+notification support, revalidation/state transitions) and 17.4 (resilience:
+timeout/circuit breaker/bulkhead, partial failure/source attribution, retry
+safety/write retry restrictions, slow/recovered connections, caller
+cancellation, concurrency/fan-out limits, unauthorized-source filtering,
+stable pagination/deduplication) are explicitly present. Add a note
+confirming tests are written to not depend on any live production external
+system, per section 17.5's closing rule. Do not run any test.
+
+Validate: Produce a checklist mirroring every bullet in sections 17.1-17.5
+and mark Yes/No whether an automated test now exists for it.
+
+--------------------------------------------------------------------------------
+PROMPT 8.2 - Environment configuration files
+--------------------------------------------------------------------------------
+Reference: sections 10.2, 10.3, 10.4, and section 22.
+
+Produce complete, environment-parameterized config/application.yaml,
+config/auth.yaml, config/database.yaml and config/modules.yaml (final
+version including every TMF module from Phase 4), matching the exact
+structure/keys shown in 10.2-10.4, with placeholders for every item listed
+in section 22 (Enterprise Decisions to Record) clearly marked as
+"TO BE SET PER ENVIRONMENT" rather than defaulted to an insecure value.
+
+Validate: Confirm every key from 10.2, 10.3 and 10.4 is present (Yes/No
+each), and every item in section 22 has a corresponding placeholder
+(Yes/No).
+
+--------------------------------------------------------------------------------
+PROMPT 8.3 - Deployment manifests (written only, not executed)
+--------------------------------------------------------------------------------
+Reference: section 18.
+
+Write (do not build or run) a Dockerfile for the Spring Boot BFF, a
+Dockerfile or static build config for the React app, and Kubernetes
+manifests (Deployment, Service, Ingress, ConfigMap, Secret references,
+readiness/liveness probes) matching the enterprise environment diagram in
+section 18 (Kubernetes Ingress -> OSS application replicas -> shared
+server-side session repository -> enterprise database -> enterprise secrets
+manager -> enterprise Keycloak -> certified external TMF systems). Also
+write a docker-compose file for the developer environment diagram (OSS
+application, TMF mocks, local disposable database, enterprise or
+developer-only Keycloak). Include the operational requirements list from
+section 18 as inline comments mapped to the manifest sections that satisfy
+them (TLS, forwarded-header/base-URL config, health/readiness/liveness
+probes, structured logs/correlation IDs, metrics/tracing, secret
+injection/rotation, DB backup/recovery, session-store availability/cleanup,
+controlled deployment/rollback, security-config validation before traffic
+acceptance). Place these under others/docker/ and others/scripts/ per
+section 13. Do not attempt to run docker or kubectl.
+
+Validate: Confirm every operational requirement bullet in section 18 is
+addressed by at least one manifest element or comment (Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 8.4 - TMF mock endpoints for local development
+--------------------------------------------------------------------------------
+Reference: section 18 (Developer environment diagram), section 17.1
+("Module integration tests against TMF-compliant mocks").
+
+Write mock TMF endpoint definitions (e.g. WireMock stub mappings or an
+OpenAPI-based mock server config) for each module built in Phase 4, matching
+each module's pinned spec placeholder from Prompt 1.2/4.x, so integration
+tests and local development do not require live external systems. Do not
+run the mock server.
+
+Validate: Confirm every module from Phase 4 has at least one corresponding
+mock definition (Yes/No each).
+
+--------------------------------------------------------------------------------
+PROMPT 8.5 - Enterprise onboarding and IAM documentation
+--------------------------------------------------------------------------------
+Reference: section 19 and section 4 in full.
+
+Write others/docs/keycloak-realm-client-setup.md documenting exactly the
+content required by section 19's last paragraph: client setup, roles,
+groups, user provisioning, URI configuration, secret handoff, SSO, logout,
+session policy, key rotation and troubleshooting — consistent with every
+detail already implemented in Phase 3. Write
+others/docs/environment-setup-checklist.md turning the 14-item checklist in
+section 19 into an actionable runbook, cross-referenced to the config files
+from Prompt 8.2 and the manifests from Prompt 8.3.
+
+Validate: Confirm keycloak-realm-client-setup.md covers all items named in
+section 19's last paragraph (Yes/No each), and
+environment-setup-checklist.md contains all 14 items from section 19 in
+order (Yes/No).
+
+================================================================================
+PHASE 9 - PRODUCTION READINESS AND FINAL VALIDATION
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT 9.1 - Production write-readiness controls
+--------------------------------------------------------------------------------
+Reference: section 20 (second half, "Before production write operations are
+enabled...").
+
+Review the codebase against every bullet in section 20's pre-production-write
+list: ETag/optimistic-locking rules, idempotency behavior, permitted retry
+conditions for writes, delete-versus-deactivate policy, audit-event schema
+and retention, approval expiry and payload immutability, connection-specific
+write capabilities, production security fail-fast behavior, and prevention
+of configuration-based approval/IAM bypass. Implement or strengthen any
+gaps found, especially in tmf638/tmf639 write paths (Prompts 4.1, 4.2) and
+Workflow Approval (Prompt 5.9).
+
+Validate: Produce a Yes/No table against every bullet in section 20's
+pre-production-write list.
+
+--------------------------------------------------------------------------------
+PROMPT 9.2 - Architecture Decisions Summary compliance sweep
+--------------------------------------------------------------------------------
+Reference: section 21 (all 10 decisions).
+
+Perform a repository-wide compliance review against each of the 10
+architecture decisions in section 21 (BFF-managed OIDC is the sole browser
+auth model; React is token-free; generated TMF contracts are build-time
+only; runtime config manages installed modules/certified connections only;
+Category C orchestration is separated from typed TMF modules; Service 360
+Core precedes Complete; product-order context is never called Product
+Inventory; workflow approval is separately assignable from administration;
+connection certification operationalizes the TMF-only boundary; production
+security failures stop startup or block the operation). Fix any code,
+comments, naming, or config found to violate any decision.
+
+Validate: Produce a Yes/No table against all 10 decisions in section 21,
+with a one-line justification per item referencing the specific file(s)
+that satisfy it.
+
+--------------------------------------------------------------------------------
+PROMPT 9.3 - Final Validation Checklist (section 23) sign-off
+--------------------------------------------------------------------------------
+Reference: section 23 in full (16 checklist questions) and section 22
+(Enterprise Decisions to Record).
+
+Perform a final full-repository review answering every one of the 16
+questions in section 23 with Yes/No and the exact file/module that proves
+it. For any "No" answer, implement the missing piece now before finishing.
+Separately, confirm every item in section 22 has a documented placeholder or
+recorded decision location (config file, doc file) rather than being
+missing entirely — these are environment-specific and are expected to say
+"placeholder present, value TO BE SET PER ENVIRONMENT" rather than a
+concrete Yes/No, since they are not code requirements.
+
+Validate: Output the completed section 23 checklist as a table:
+Question | Yes/No | Evidence (file/module). Output the section 22 list as a
+second table: Item | Placeholder Present (Yes/No) | Location.
+
+================================================================================
+END OF PROMPT SEQUENCE
+================================================================================
+After Prompt 9.3 passes with all Yes answers, the codebase is ready to be
+copied out of this environment onto a machine with Java, Node, Maven/Gradle,
+Docker and Kubernetes for an actual build, run, and end-to-end test pass.
+================================================================================
